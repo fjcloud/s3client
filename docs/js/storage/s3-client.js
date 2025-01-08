@@ -73,21 +73,26 @@ export class S3Client {
     }
 
     generateSSEKey() {
-        // Generate 32 random bytes
+        // Generate 32 random bytes (like openssl rand)
         const randomBytes = new Uint8Array(32);
         crypto.getRandomValues(randomBytes);
         
         // Store the binary key directly
         this.encryptionKey = randomBytes;
         
-        // Convert binary key to base64 for persistence
+        // Convert binary key to base64 for persistence (like openssl base64)
         const base64Key = btoa(String.fromCharCode.apply(null, randomBytes));
         localStorage.setItem('sseKey', base64Key);
         
+        // Debug logging to verify key format
         console.log('Debug - Generated SSE-C key:', {
             keyLength: randomBytes.length,        // Should be 32
             base64Length: base64Key.length,       // Should be ~44
-            keyPrefix: base64Key.substring(0, 4) + '...'
+            keyPrefix: base64Key.substring(0, 4) + '...',
+            // Log full key for verification (remove in production)
+            fullKey: base64Key,
+            // Log binary representation
+            binaryKey: Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('')
         });
         
         return base64Key;
@@ -105,10 +110,15 @@ export class S3Client {
         }
         this.encryptionKey = bytes;
         
+        // Debug logging to verify key format
         console.log('Debug - Loaded SSE-C key:', {
             keyLength: this.encryptionKey.length,  // Should be 32
             base64Length: base64Key.length,        // Should be ~44
-            keyPrefix: base64Key.substring(0, 4) + '...'
+            keyPrefix: base64Key.substring(0, 4) + '...',
+            // Log full key for verification (remove in production)
+            fullKey: base64Key,
+            // Log binary representation
+            binaryKey: Array.from(this.encryptionKey).map(b => b.toString(16).padStart(2, '0')).join('')
         });
         
         return base64Key;
