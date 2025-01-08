@@ -1,5 +1,3 @@
-import CryptoJS from 'crypto-js';
-
 export class S3Client {
     constructor() {
         this.client = null;
