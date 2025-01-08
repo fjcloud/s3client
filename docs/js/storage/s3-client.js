@@ -52,44 +52,36 @@ export class S3Client {
     }
 
     generateSSEKey() {
-        // Generate 32 random bytes (like openssl rand -hex 32)
+        // Generate 32 random bytes
         const randomBytes = new Uint8Array(32);
         crypto.getRandomValues(randomBytes);
         
-        // Convert to hex string for storage (like the key file)
-        const hexKey = Array.from(randomBytes)
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('');
-            
-        // Convert hex to binary (like xxd -r -p)
-        const binaryKey = new Uint8Array(
-            hexKey.match(/.{2}/g).map(byte => parseInt(byte, 16))
-        );
+        // Store the binary key directly
+        this.encryptionKey = randomBytes;
         
-        // Store hex version (like enc.key file)
-        localStorage.setItem('sseKeyHex', hexKey);
-        // Keep binary version in memory (like enc.key.bin)
-        this.encryptionKey = binaryKey;
+        // Store base64 version for persistence
+        const base64Key = btoa(String.fromCharCode(...randomBytes));
+        localStorage.setItem('sseKey', base64Key);
         
         console.log('Debug - Generated SSE-C key:', {
-            hexLength: hexKey.length,  // Should be 64
-            binaryLength: binaryKey.length,  // Should be 32
-            hexPrefix: hexKey.substring(0, 8) + '...'
+            keyLength: randomBytes.length,  // Should be 32
+            base64Length: base64Key.length  // Should be ~44
         });
         
-        return hexKey;
+        return base64Key;
     }
 
     loadSSEKey() {
-        const hexKey = localStorage.getItem('sseKeyHex');
-        if (!hexKey) throw new Error('No SSE key found');
+        const base64Key = localStorage.getItem('sseKey');
+        if (!base64Key) throw new Error('No SSE key found');
         
-        // Convert hex to binary (like xxd -r -p)
+        // Convert base64 back to binary
+        const binary = atob(base64Key);
         this.encryptionKey = new Uint8Array(
-            hexKey.match(/.{2}/g).map(byte => parseInt(byte, 16))
+            binary.split('').map(char => char.charCodeAt(0))
         );
         
-        return hexKey;
+        return base64Key;
     }
 
     async uploadFile(file) {
@@ -124,7 +116,10 @@ export class S3Client {
             algorithm: params.SSECustomerAlgorithm,
             keyLength: this.encryptionKey.length,
             base64KeyLength: params.SSECustomerKey.length,
-            md5Length: params.SSECustomerKeyMD5.length
+            md5Length: params.SSECustomerKeyMD5.length,
+            // First few chars for verification
+            base64KeyPrefix: params.SSECustomerKey.substring(0, 4) + '...',
+            md5Prefix: params.SSECustomerKeyMD5.substring(0, 4) + '...'
         });
 
         return new Promise((resolve, reject) => {
@@ -133,6 +128,11 @@ export class S3Client {
                     console.error('Upload error:', err);
                     reject(err);
                 } else {
+                    console.log('Upload success:', {
+                        ETag: data.ETag,
+                        SSECustomerAlgorithm: data.SSECustomerAlgorithm,
+                        SSECustomerKeyMD5: data.SSECustomerKeyMD5
+                    });
                     resolve(data);
                 }
             });
