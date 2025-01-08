@@ -279,6 +279,40 @@ export class S3Client {
         
         throw error;
     }
+
+    async getSignedUrl(key) {
+        if (!this.client) throw new Error('S3 client not initialized');
+        if (!this.encryptionKey) throw new Error('SSE key not initialized');
+
+        try {
+            const data = await this.getObject(key);
+            const blob = new Blob([data.Body], { type: data.ContentType || 'image/jpeg' });
+            return URL.createObjectURL(blob);
+        } catch (error) {
+            console.error('Failed to get signed URL:', error);
+            throw error;
+        }
+    }
+
+    async downloadFile(key) {
+        if (!this.client) throw new Error('S3 client not initialized');
+
+        try {
+            const data = await this.getObject(key);
+            const blob = new Blob([data.Body], { type: data.ContentType || 'image/jpeg' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = this.getFileName(key);
+            a.click();
+            
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to download file:', error);
+            throw new Error('Failed to download file');
+        }
+    }
 }
 
 export const s3Client = new S3Client(); 
