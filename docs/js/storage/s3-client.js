@@ -5,11 +5,32 @@ export class S3Client {
         this.encryptionKey = null;
     }
 
+    // Helper function to convert Uint8Array to base64
+    uint8ArrayToBase64(uint8Array) {
+        let binary = '';
+        const len = uint8Array.length;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(uint8Array[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    // Helper function to convert base64 to Uint8Array
+    base64ToUint8Array(base64) {
+        const binary = window.atob(base64);
+        const len = binary.length;
+        const array = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            array[i] = binary.charCodeAt(i);
+        }
+        return array;
+    }
+
     initialize(config) {
         this.config = config;
         
         // Generate or load SSE-C key
-        if (!localStorage.getItem('sseKeyHex')) {
+        if (!localStorage.getItem('sseKey')) {
             this.generateSSEKey();
         } else {
             this.loadSSEKey();
@@ -59,13 +80,14 @@ export class S3Client {
         // Store the binary key directly
         this.encryptionKey = randomBytes;
         
-        // Store base64 version for persistence
-        const base64Key = btoa(String.fromCharCode(...randomBytes));
+        // Convert binary key to base64 for persistence
+        const base64Key = this.uint8ArrayToBase64(randomBytes);
         localStorage.setItem('sseKey', base64Key);
         
         console.log('Debug - Generated SSE-C key:', {
-            keyLength: randomBytes.length,  // Should be 32
-            base64Length: base64Key.length  // Should be ~44
+            keyLength: randomBytes.length,        // Should be 32
+            base64Length: base64Key.length,       // Should be ~44
+            keyPrefix: base64Key.substring(0, 4) + '...'
         });
         
         return base64Key;
@@ -76,10 +98,13 @@ export class S3Client {
         if (!base64Key) throw new Error('No SSE key found');
         
         // Convert base64 back to binary
-        const binary = atob(base64Key);
-        this.encryptionKey = new Uint8Array(
-            binary.split('').map(char => char.charCodeAt(0))
-        );
+        this.encryptionKey = this.base64ToUint8Array(base64Key);
+        
+        console.log('Debug - Loaded SSE-C key:', {
+            keyLength: this.encryptionKey.length,  // Should be 32
+            base64Length: base64Key.length,        // Should be ~44
+            keyPrefix: base64Key.substring(0, 4) + '...'
+        });
         
         return base64Key;
     }
@@ -95,12 +120,11 @@ export class S3Client {
         const arrayBuffer = await file.arrayBuffer();
         
         // Convert binary key to base64 for transmission
-        const base64Key = btoa(String.fromCharCode(...this.encryptionKey));
+        const base64Key = this.uint8ArrayToBase64(this.encryptionKey);
         
-        // Calculate MD5 of the binary key (not the base64 version)
-        const keyMD5 = CryptoJS.MD5(
-            CryptoJS.lib.WordArray.create(this.encryptionKey)
-        ).toString(CryptoJS.enc.Base64);
+        // Calculate MD5 of the binary key
+        const wordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
+        const keyMD5 = CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Base64);
 
         const params = {
             Bucket: this.config.bucketName,
@@ -117,7 +141,6 @@ export class S3Client {
             keyLength: this.encryptionKey.length,
             base64KeyLength: params.SSECustomerKey.length,
             md5Length: params.SSECustomerKeyMD5.length,
-            // First few chars for verification
             base64KeyPrefix: params.SSECustomerKey.substring(0, 4) + '...',
             md5Prefix: params.SSECustomerKeyMD5.substring(0, 4) + '...'
         });
@@ -157,12 +180,11 @@ export class S3Client {
         if (!this.encryptionKey) throw new Error('SSE key not initialized');
 
         // Convert binary key to base64 for transmission
-        const base64Key = btoa(String.fromCharCode(...this.encryptionKey));
+        const base64Key = this.uint8ArrayToBase64(this.encryptionKey);
         
         // Calculate MD5 of the binary key
-        const keyMD5 = CryptoJS.MD5(
-            CryptoJS.lib.WordArray.create(this.encryptionKey)
-        ).toString(CryptoJS.enc.Base64);
+        const wordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
+        const keyMD5 = CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Base64);
 
         const params = {
             Bucket: this.config.bucketName,
@@ -171,6 +193,15 @@ export class S3Client {
             SSECustomerKey: base64Key,
             SSECustomerKeyMD5: keyMD5
         };
+
+        console.log('Debug - GetObject params:', {
+            algorithm: params.SSECustomerAlgorithm,
+            keyLength: this.encryptionKey.length,
+            base64KeyLength: params.SSECustomerKey.length,
+            md5Length: params.SSECustomerKeyMD5.length,
+            base64KeyPrefix: params.SSECustomerKey.substring(0, 4) + '...',
+            md5Prefix: params.SSECustomerKeyMD5.substring(0, 4) + '...'
+        });
 
         return new Promise((resolve, reject) => {
             this.client.getObject(params, (err, data) => {
@@ -218,12 +249,11 @@ export class S3Client {
         if (!this.encryptionKey) throw new Error('SSE key not initialized');
 
         // Convert binary key to base64 for transmission
-        const base64Key = btoa(String.fromCharCode(...this.encryptionKey));
+        const base64Key = this.uint8ArrayToBase64(this.encryptionKey);
         
         // Calculate MD5 of the binary key
-        const keyMD5 = CryptoJS.MD5(
-            CryptoJS.lib.WordArray.create(this.encryptionKey)
-        ).toString(CryptoJS.enc.Base64);
+        const wordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
+        const keyMD5 = CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Base64);
 
         const params = {
             Bucket: this.config.bucketName,
