@@ -1,3 +1,5 @@
+import CryptoJS from 'crypto-js';
+
 export class S3Client {
     constructor() {
         this.client = null;
@@ -125,17 +127,12 @@ export class S3Client {
         // Calculate MD5 of the binary key
         const keyWordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
         const keyMD5 = CryptoJS.MD5(keyWordArray).toString(CryptoJS.enc.Base64);
-        
-        // Calculate MD5 of the file body
-        const bodyWordArray = CryptoJS.lib.WordArray.create(arrayBuffer);
-        const bodyMD5 = CryptoJS.MD5(bodyWordArray).toString(CryptoJS.enc.Base64);
 
         const params = {
             Bucket: this.config.bucketName,
             Key: key,
             Body: arrayBuffer,
             ContentType: file.type,
-            ContentMD5: bodyMD5,
             SSECustomerAlgorithm: 'AES256',
             SSECustomerKey: base64Key,
             SSECustomerKeyMD5: keyMD5
@@ -146,10 +143,8 @@ export class S3Client {
             keyLength: this.encryptionKey.length,
             base64KeyLength: params.SSECustomerKey.length,
             md5Length: params.SSECustomerKeyMD5.length,
-            contentMD5Length: params.ContentMD5.length,
             base64KeyPrefix: params.SSECustomerKey.substring(0, 4) + '...',
-            md5Prefix: params.SSECustomerKeyMD5.substring(0, 4) + '...',
-            bodyMD5Prefix: params.ContentMD5.substring(0, 4) + '...'
+            md5Prefix: params.SSECustomerKeyMD5.substring(0, 4) + '...'
         });
 
         return new Promise((resolve, reject) => {
@@ -167,20 +162,6 @@ export class S3Client {
                 }
             });
         });
-    }
-
-    async getSignedUrl(key) {
-        if (!this.client) throw new Error('S3 client not initialized');
-        if (!this.encryptionKey) throw new Error('SSE key not initialized');
-
-        try {
-            const data = await this.getObject(key);
-            const blob = new Blob([data.Body], { type: data.ContentType || 'image/jpeg' });
-            return URL.createObjectURL(blob);
-        } catch (error) {
-            console.error('Failed to get signed URL:', error);
-            throw error;
-        }
     }
 
     async getObject(key) {
@@ -217,35 +198,6 @@ export class S3Client {
                 }
             });
         });
-    }
-
-    getMD5Hash(key) {
-        // Convert base64-encoded key to binary string
-        const binaryKey = atob(key);
-        // Compute MD5 hash
-        const md5 = CryptoJS.MD5(CryptoJS.enc.Latin1.parse(binaryKey));
-        // Encode hash in base64
-        return CryptoJS.enc.Base64.stringify(md5);
-    }
-
-    async downloadFile(key) {
-        if (!this.client) throw new Error('S3 client not initialized');
-
-        try {
-            const data = await this.getObject(key);
-            const blob = new Blob([data.Body], { type: data.ContentType || 'image/jpeg' });
-            const url = URL.createObjectURL(blob);
-            
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = this.getFileName(key);
-            a.click();
-            
-            URL.revokeObjectURL(url);
-        } catch (error) {
-            console.error('Failed to download file:', error);
-            throw new Error('Failed to download file');
-        }
     }
 
     async deleteFile(key) {
@@ -293,41 +245,6 @@ export class S3Client {
 
     getFileName(key) {
         return decodeURIComponent(key.split('-').slice(1).join('-'));
-    }
-
-    async checkCORS() {
-        if (!this.client) throw new Error('S3 client not initialized');
-
-        try {
-            // Try a simple listObjects request instead of headBucket
-            const params = {
-                Bucket: this.config.bucketName,
-                MaxKeys: 1
-            };
-
-            await this.client.listObjects(params).promise();
-            return true;
-        } catch (error) {
-            console.error('CORS check failed:', error);
-            if (error.code === 'AccessDenied') {
-                throw new Error('Access denied. Please check your bucket permissions and CORS configuration.');
-            }
-            throw error;
-        }
-    }
-
-    handleCORSError(error) {
-        console.error('S3 request failed:', error);
-        
-        if (error.code === 'NetworkingError' || error.code === 'CORSError') {
-            const errorMessage = 'CORS configuration error. Please ensure:\n' +
-                '1. Your bucket CORS configuration is correct\n' +
-                '2. You are using the correct endpoint URL\n' +
-                '3. Your credentials have sufficient permissions';
-            throw new Error(errorMessage);
-        }
-        
-        throw error;
     }
 }
 
