@@ -38,8 +38,19 @@ class App {
                 
                 s3Client.initialize(config);
                 console.log('S3 Client initialized.');
-                await this.photoGrid.loadPhotos();
-                console.log('Photos loaded.');
+
+                // Add CORS check
+                try {
+                    await s3Client.checkCORS();
+                    console.log('CORS check passed successfully');
+                    await this.photoGrid.loadPhotos();
+                    console.log('Photos loaded.');
+                } catch (error) {
+                    console.error('CORS check failed:', error);
+                    alert('Failed to connect to S3 bucket. Please check your CORS configuration and bucket permissions.');
+                    this.configManager.showModal();
+                    return;
+                }
             } else {
                 this.configManager.showModal();
                 return;

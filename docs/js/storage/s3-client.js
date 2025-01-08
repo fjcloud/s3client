@@ -8,14 +8,32 @@ export class S3Client {
 
     initialize(config) {
         this.config = config;
+        
+        // Create custom endpoint with your bucket URL
+        const endpoint = new AWS.Endpoint(config.bucketUrl);
+        
+        // Update AWS config with CORS settings
         AWS.config.update({
             accessKeyId: config.accessKeyId,
             secretAccessKey: config.secretAccessKey,
-            endpoint: new AWS.Endpoint(config.bucketUrl),
+            endpoint: endpoint,
             s3ForcePathStyle: true,
-            signatureVersion: 'v4'
+            signatureVersion: 'v4',
+            httpOptions: {
+                cors: true,
+                withCredentials: false
+            }
         });
-        this.client = new AWS.S3();
+
+        // Create S3 client with custom configuration
+        this.client = new AWS.S3({
+            params: { Bucket: config.bucketName },
+            useAccelerateEndpoint: false,
+            // Add specific CORS configuration
+            corsEnabled: true,
+            useAccelerateEndpoint: false,
+            computeChecksums: true
+        });
     }
 
     async uploadFile(file) {
@@ -130,6 +148,22 @@ export class S3Client {
 
     getFileName(key) {
         return decodeURIComponent(key.split('-').slice(1).join('-'));
+    }
+
+    async checkCORS() {
+        if (!this.client) throw new Error('S3 client not initialized');
+
+        try {
+            // Test CORS with a HEAD request
+            await this.client.headBucket({ Bucket: this.config.bucketName }).promise();
+            return true;
+        } catch (error) {
+            console.error('CORS check failed:', error);
+            if (error.code === 'AccessDenied') {
+                throw new Error('Access denied. Please check your bucket permissions and CORS configuration.');
+            }
+            throw error;
+        }
     }
 }
 
