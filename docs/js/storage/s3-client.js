@@ -53,37 +53,34 @@ export class S3Client {
     }
 
     generateSSEKey() {
-        // Generate hex string (32 bytes = 64 hex characters)
-        const hexChars = '0123456789abcdef';
-        let hexKey = '';
-        for (let i = 0; i < 64; i++) {
-            hexKey += hexChars[Math.floor(Math.random() * 16)];
-        }
+        // Generate 32 bytes of random data
+        const key = crypto.getRandomValues(new Uint8Array(32));
         
-        // Convert hex to binary (like xxd -r -p)
-        const binaryKey = new Uint8Array(32);
-        for (let i = 0; i < 32; i++) {
-            binaryKey[i] = parseInt(hexKey.substr(i * 2, 2), 16);
-        }
+        // Convert to base64 for storage
+        const base64Key = btoa(String.fromCharCode(...key));
         
-        localStorage.setItem('sseKeyHex', hexKey);
-        this.encryptionKey = binaryKey;
+        localStorage.setItem('sseKey', base64Key);
+        this.encryptionKey = key;
         
-        console.log('Generated hex key:', hexKey);
-        return hexKey;
+        console.log('Debug - Key generation:', {
+            keyLength: key.length,
+            base64Length: base64Key.length
+        });
+        
+        return base64Key;
     }
 
     loadSSEKey() {
-        const hexKey = localStorage.getItem('sseKeyHex');
-        if (!hexKey) throw new Error('No SSE key found');
+        const base64Key = localStorage.getItem('sseKey');
+        if (!base64Key) throw new Error('No SSE key found');
         
-        // Convert hex to binary
-        const binaryKey = new Uint8Array(32);
-        for (let i = 0; i < 32; i++) {
-            binaryKey[i] = parseInt(hexKey.substr(i * 2, 2), 16);
-        }
-        this.encryptionKey = binaryKey;
-        return hexKey;
+        // Convert base64 back to binary
+        const binary = atob(base64Key);
+        this.encryptionKey = new Uint8Array(
+            binary.split('').map(char => char.charCodeAt(0))
+        );
+        
+        return base64Key;
     }
 
     async uploadFile(file) {
@@ -96,13 +93,12 @@ export class S3Client {
 
         const arrayBuffer = await file.arrayBuffer();
         
-        // Convert binary key to base64 for AWS SDK
+        // First base64 encode the key
         const keyBase64 = btoa(String.fromCharCode(...this.encryptionKey));
         
-        // Calculate MD5 of the binary key
-        const keyMD5 = CryptoJS.MD5(
-            CryptoJS.lib.WordArray.create(this.encryptionKey.buffer)
-        ).toString(CryptoJS.enc.Base64);
+        // Create a WordArray directly from the binary key
+        const wordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
+        const keyMD5 = CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Base64);
 
         const params = {
             Bucket: this.config.bucketName,
@@ -114,14 +110,14 @@ export class S3Client {
             SSECustomerKeyMD5: keyMD5
         };
 
-        console.log('Debug SSE-C info:', {
-            keyHexLength: localStorage.getItem('sseKeyHex').length,
-            keyBinaryLength: this.encryptionKey.length,
-            keyBase64Length: keyBase64.length,
-            keyMD5Length: keyMD5.length,
-            // First few chars for verification (never log full keys in production)
-            keyBase64Start: keyBase64.substring(0, 4),
-            keyMD5Start: keyMD5.substring(0, 4)
+        console.log('Debug - Upload params:', {
+            algorithm: params.SSECustomerAlgorithm,
+            keyLength: this.encryptionKey.length,
+            base64Length: params.SSECustomerKey.length,
+            md5Length: params.SSECustomerKeyMD5.length,
+            // Log first few characters for debugging (never log full keys in production)
+            keyPrefix: params.SSECustomerKey.substring(0, 4),
+            md5Prefix: params.SSECustomerKeyMD5.substring(0, 4)
         });
 
         return new Promise((resolve, reject) => {
@@ -152,9 +148,8 @@ export class S3Client {
 
     async getObject(key) {
         const keyBase64 = btoa(String.fromCharCode(...this.encryptionKey));
-        const keyMD5 = CryptoJS.MD5(
-            CryptoJS.lib.WordArray.create(this.encryptionKey)
-        ).toString(CryptoJS.enc.Base64);
+        const wordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
+        const keyMD5 = CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Base64);
 
         const params = {
             Bucket: this.config.bucketName,
@@ -209,9 +204,8 @@ export class S3Client {
         if (!this.client) throw new Error('S3 client not initialized');
 
         const keyBase64 = btoa(String.fromCharCode(...this.encryptionKey));
-        const keyMD5 = CryptoJS.MD5(
-            CryptoJS.lib.WordArray.create(this.encryptionKey)
-        ).toString(CryptoJS.enc.Base64);
+        const wordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
+        const keyMD5 = CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Base64);
 
         const params = {
             Bucket: this.config.bucketName,
