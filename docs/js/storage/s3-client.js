@@ -73,26 +73,27 @@ export class S3Client {
     }
 
     generateSSEKey() {
-        // Generate 32 random bytes (like openssl rand)
+        // Generate exactly 32 random bytes (256 bits) for AES256
         const randomBytes = new Uint8Array(32);
         crypto.getRandomValues(randomBytes);
         
         // Store the binary key directly
         this.encryptionKey = randomBytes;
         
-        // Convert binary key to base64 for persistence (like openssl base64)
+        // Convert to base64 exactly as AWS CLI does
         const base64Key = btoa(String.fromCharCode.apply(null, randomBytes));
         localStorage.setItem('sseKey', base64Key);
         
         // Debug logging to verify key format
         console.log('Debug - Generated SSE-C key:', {
-            keyLength: randomBytes.length,        // Should be 32
-            base64Length: base64Key.length,       // Should be ~44
+            keyLength: randomBytes.length,        // Must be exactly 32
+            base64Length: base64Key.length,       // Should be 44 (32 bytes in base64)
             keyPrefix: base64Key.substring(0, 4) + '...',
-            // Log full key for verification (remove in production)
             fullKey: base64Key,
-            // Log binary representation
-            binaryKey: Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+            // Log binary representation for comparison with openssl output
+            binaryKey: Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join(''),
+            // Log MD5 for verification
+            keyMD5: CryptoJS.MD5(CryptoJS.lib.WordArray.create(randomBytes)).toString(CryptoJS.enc.Base64)
         });
         
         return base64Key;
@@ -134,10 +135,10 @@ export class S3Client {
 
         const arrayBuffer = await file.arrayBuffer();
         
-        // Convert binary key to base64 for transmission
-        const base64Key = this.uint8ArrayToBase64(this.encryptionKey);
+        // Convert binary key to base64 exactly as AWS CLI does
+        const base64Key = btoa(String.fromCharCode.apply(null, this.encryptionKey));
         
-        // Calculate MD5 of the binary key
+        // Calculate MD5 of the binary key exactly as AWS CLI does
         const keyWordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
         const keyMD5 = CryptoJS.MD5(keyWordArray).toString(CryptoJS.enc.Base64);
 
@@ -151,13 +152,17 @@ export class S3Client {
             SSECustomerKeyMD5: keyMD5
         };
 
+        // Debug logging to verify parameters match AWS CLI
         console.log('Debug - Upload params:', {
             algorithm: params.SSECustomerAlgorithm,
             keyLength: this.encryptionKey.length,
             base64KeyLength: params.SSECustomerKey.length,
             md5Length: params.SSECustomerKeyMD5.length,
             base64KeyPrefix: params.SSECustomerKey.substring(0, 4) + '...',
-            md5Prefix: params.SSECustomerKeyMD5.substring(0, 4) + '...'
+            md5Prefix: params.SSECustomerKeyMD5.substring(0, 4) + '...',
+            // Compare these values with AWS CLI debug output
+            fullKey: params.SSECustomerKey,
+            fullMD5: params.SSECustomerKeyMD5
         });
 
         return new Promise((resolve, reject) => {
