@@ -47,7 +47,19 @@ class App {
                     console.log('Photos loaded.');
                 } catch (error) {
                     console.error('CORS check failed:', error);
-                    alert('Failed to connect to S3 bucket. Please check your CORS configuration and bucket permissions.');
+                    let errorMessage = 'Failed to connect to S3 bucket. ';
+                    
+                    if (error.message.includes('CORS')) {
+                        errorMessage += '\n\nPlease verify your CORS configuration includes:\n' +
+                            '- Origin: https://s3.msl.cloud\n' +
+                            '- Methods: HEAD, GET, PUT, POST, DELETE\n' +
+                            '- Headers: *\n' +
+                            '- ExposeHeaders: ETag';
+                    } else {
+                        errorMessage += 'Please check your credentials and bucket permissions.';
+                    }
+                    
+                    alert(errorMessage);
                     this.configManager.showModal();
                     return;
                 }

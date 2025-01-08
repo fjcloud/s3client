@@ -9,18 +9,21 @@ export class S3Client {
     initialize(config) {
         this.config = config;
         
-        // Create custom endpoint with your bucket URL
-        const endpoint = new AWS.Endpoint(config.bucketUrl);
+        // Parse the endpoint URL to get the hostname
+        const endpointUrl = new URL(config.bucketUrl);
         
         // Update AWS config with CORS settings
         AWS.config.update({
             accessKeyId: config.accessKeyId,
             secretAccessKey: config.secretAccessKey,
-            endpoint: endpoint,
+            region: 'default', // Ceph doesn't use regions but needs a value
             s3ForcePathStyle: true,
             signatureVersion: 'v4',
+            // Configure the endpoint
+            endpoint: endpointUrl.origin,
             httpOptions: {
-                cors: true,
+                xhrAsync: true,
+                timeout: 0,
                 withCredentials: false
             }
         });
@@ -28,11 +31,18 @@ export class S3Client {
         // Create S3 client with custom configuration
         this.client = new AWS.S3({
             params: { Bucket: config.bucketName },
-            useAccelerateEndpoint: false,
-            // Add specific CORS configuration
-            corsEnabled: true,
-            useAccelerateEndpoint: false,
-            computeChecksums: true
+            signatureVersion: 'v4',
+            s3ForcePathStyle: true,
+            computeChecksums: true,
+            correctClockSkew: true,
+            customUserAgent: null,
+            // Add specific request handling
+            customRequestHandler: (request) => {
+                request.on('build', function() {
+                    request.httpRequest.headers['Origin'] = 'https://s3.msl.cloud';
+                    request.httpRequest.headers['Access-Control-Request-Method'] = 'HEAD,GET,PUT,POST,DELETE';
+                });
+            }
         });
     }
 
@@ -154,8 +164,13 @@ export class S3Client {
         if (!this.client) throw new Error('S3 client not initialized');
 
         try {
-            // Test CORS with a HEAD request
-            await this.client.headBucket({ Bucket: this.config.bucketName }).promise();
+            // Try a simple listObjects request instead of headBucket
+            const params = {
+                Bucket: this.config.bucketName,
+                MaxKeys: 1
+            };
+
+            await this.client.listObjects(params).promise();
             return true;
         } catch (error) {
             console.error('CORS check failed:', error);
@@ -164,6 +179,20 @@ export class S3Client {
             }
             throw error;
         }
+    }
+
+    handleCORSError(error) {
+        console.error('S3 request failed:', error);
+        
+        if (error.code === 'NetworkingError' || error.code === 'CORSError') {
+            const errorMessage = 'CORS configuration error. Please ensure:\n' +
+                '1. Your bucket CORS configuration is correct\n' +
+                '2. You are using the correct endpoint URL\n' +
+                '3. Your credentials have sufficient permissions';
+            throw new Error(errorMessage);
+        }
+        
+        throw error;
     }
 }
 
