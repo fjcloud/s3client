@@ -47,7 +47,7 @@ export class S3Client {
             AWS.config.update({
                 accessKeyId: config.accessKeyId,
                 secretAccessKey: config.secretAccessKey,
-                region: 'eu-central-1',  // Hetzner uses eu-central-1
+                region: 'eu-central-1',
                 s3ForcePathStyle: true,
                 signatureVersion: 'v4',
                 endpoint: parsedUrl.origin,
@@ -123,14 +123,19 @@ export class S3Client {
         const base64Key = this.uint8ArrayToBase64(this.encryptionKey);
         
         // Calculate MD5 of the binary key
-        const wordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
-        const keyMD5 = CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Base64);
+        const keyWordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
+        const keyMD5 = CryptoJS.MD5(keyWordArray).toString(CryptoJS.enc.Base64);
+        
+        // Calculate MD5 of the file body
+        const bodyWordArray = CryptoJS.lib.WordArray.create(arrayBuffer);
+        const bodyMD5 = CryptoJS.MD5(bodyWordArray).toString(CryptoJS.enc.Base64);
 
         const params = {
             Bucket: this.config.bucketName,
             Key: key,
             Body: arrayBuffer,
             ContentType: file.type,
+            ContentMD5: bodyMD5,
             SSECustomerAlgorithm: 'AES256',
             SSECustomerKey: base64Key,
             SSECustomerKeyMD5: keyMD5
@@ -141,8 +146,10 @@ export class S3Client {
             keyLength: this.encryptionKey.length,
             base64KeyLength: params.SSECustomerKey.length,
             md5Length: params.SSECustomerKeyMD5.length,
+            contentMD5Length: params.ContentMD5.length,
             base64KeyPrefix: params.SSECustomerKey.substring(0, 4) + '...',
-            md5Prefix: params.SSECustomerKeyMD5.substring(0, 4) + '...'
+            md5Prefix: params.SSECustomerKeyMD5.substring(0, 4) + '...',
+            bodyMD5Prefix: params.ContentMD5.substring(0, 4) + '...'
         });
 
         return new Promise((resolve, reject) => {
@@ -179,12 +186,9 @@ export class S3Client {
     async getObject(key) {
         if (!this.encryptionKey) throw new Error('SSE key not initialized');
 
-        // Convert binary key to base64 for transmission
         const base64Key = this.uint8ArrayToBase64(this.encryptionKey);
-        
-        // Calculate MD5 of the binary key
-        const wordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
-        const keyMD5 = CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Base64);
+        const keyWordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
+        const keyMD5 = CryptoJS.MD5(keyWordArray).toString(CryptoJS.enc.Base64);
 
         const params = {
             Bucket: this.config.bucketName,
@@ -248,12 +252,9 @@ export class S3Client {
         if (!this.client) throw new Error('S3 client not initialized');
         if (!this.encryptionKey) throw new Error('SSE key not initialized');
 
-        // Convert binary key to base64 for transmission
         const base64Key = this.uint8ArrayToBase64(this.encryptionKey);
-        
-        // Calculate MD5 of the binary key
-        const wordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
-        const keyMD5 = CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Base64);
+        const keyWordArray = CryptoJS.lib.WordArray.create(this.encryptionKey);
+        const keyMD5 = CryptoJS.MD5(keyWordArray).toString(CryptoJS.enc.Base64);
 
         const params = {
             Bucket: this.config.bucketName,
