@@ -9,41 +9,52 @@ export class S3Client {
     initialize(config) {
         this.config = config;
         
-        // Parse the endpoint URL to get the hostname
-        const endpointUrl = new URL(config.bucketUrl);
+        // Ensure the bucket URL has a protocol
+        let endpointUrl = config.bucketUrl;
+        if (!endpointUrl.startsWith('http://') && !endpointUrl.startsWith('https://')) {
+            endpointUrl = 'https://' + endpointUrl;
+        }
         
-        // Update AWS config with CORS settings
-        AWS.config.update({
-            accessKeyId: config.accessKeyId,
-            secretAccessKey: config.secretAccessKey,
-            region: 'default', // Ceph doesn't use regions but needs a value
-            s3ForcePathStyle: true,
-            signatureVersion: 'v4',
-            // Configure the endpoint
-            endpoint: endpointUrl.origin,
-            httpOptions: {
-                xhrAsync: true,
-                timeout: 0,
-                withCredentials: false
-            }
-        });
+        // Parse the endpoint URL
+        try {
+            const parsedUrl = new URL(endpointUrl);
+            
+            // Update AWS config with CORS settings
+            AWS.config.update({
+                accessKeyId: config.accessKeyId,
+                secretAccessKey: config.secretAccessKey,
+                region: 'default', // Ceph doesn't use regions but needs a value
+                s3ForcePathStyle: true,
+                signatureVersion: 'v4',
+                // Configure the endpoint
+                endpoint: parsedUrl.origin,
+                httpOptions: {
+                    xhrAsync: true,
+                    timeout: 0,
+                    withCredentials: false
+                }
+            });
 
-        // Create S3 client with custom configuration
-        this.client = new AWS.S3({
-            params: { Bucket: config.bucketName },
-            signatureVersion: 'v4',
-            s3ForcePathStyle: true,
-            computeChecksums: true,
-            correctClockSkew: true,
-            customUserAgent: null,
-            // Add specific request handling
-            customRequestHandler: (request) => {
-                request.on('build', function() {
-                    request.httpRequest.headers['Origin'] = 'https://s3.msl.cloud';
-                    request.httpRequest.headers['Access-Control-Request-Method'] = 'HEAD,GET,PUT,POST,DELETE';
-                });
-            }
-        });
+            // Create S3 client with custom configuration
+            this.client = new AWS.S3({
+                params: { Bucket: config.bucketName },
+                signatureVersion: 'v4',
+                s3ForcePathStyle: true,
+                computeChecksums: true,
+                correctClockSkew: true,
+                customUserAgent: null,
+                // Add specific request handling
+                customRequestHandler: (request) => {
+                    request.on('build', function() {
+                        request.httpRequest.headers['Origin'] = 'https://s3.msl.cloud';
+                        request.httpRequest.headers['Access-Control-Request-Method'] = 'HEAD,GET,PUT,POST,DELETE';
+                    });
+                }
+            });
+        } catch (error) {
+            console.error('Invalid endpoint URL:', error);
+            throw new Error('Invalid S3 endpoint URL. Please ensure the URL is in the correct format.');
+        }
     }
 
     async uploadFile(file) {
