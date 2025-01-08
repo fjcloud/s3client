@@ -244,6 +244,41 @@ export class S3Client {
     getFileName(key) {
         return decodeURIComponent(key.split('-').slice(1).join('-'));
     }
+
+    async checkCORS() {
+        if (!this.client) throw new Error('S3 client not initialized');
+
+        try {
+            // Try a simple listObjects request instead of headBucket
+            const params = {
+                Bucket: this.config.bucketName,
+                MaxKeys: 1
+            };
+
+            await this.client.listObjects(params).promise();
+            return true;
+        } catch (error) {
+            console.error('CORS check failed:', error);
+            if (error.code === 'AccessDenied') {
+                throw new Error('Access denied. Please check your bucket permissions and CORS configuration.');
+            }
+            throw error;
+        }
+    }
+
+    handleCORSError(error) {
+        console.error('S3 request failed:', error);
+        
+        if (error.code === 'NetworkingError' || error.code === 'CORSError') {
+            const errorMessage = 'CORS configuration error. Please ensure:\n' +
+                '1. Your bucket CORS configuration is correct\n' +
+                '2. You are using the correct endpoint URL\n' +
+                '3. Your credentials have sufficient permissions';
+            throw new Error(errorMessage);
+        }
+        
+        throw error;
+    }
 }
 
 export const s3Client = new S3Client(); 
